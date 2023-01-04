@@ -1,0 +1,30 @@
+version: '3'
+services:
+  mega_backup:
+    build: .
+    image: mega_backup
+    container_name: mega_backup
+    hostname: mega_backup
+    env_file: mega_backup.env
+    restart: always
+    volumes:
+      - .:/usr/src/app
+    command: bash -c 'python -u mega_sql_script.py 0 2 1'
+  mega_backup_1:
+    image: mega_backup
+    container_name: mega_backup_1
+    hostname: mega_backup_1
+    env_file: mega_backup.env
+    restart: always
+    volumes:
+      - .:/usr/src/app
+    command: bash -c 'python -u mega_sql_script.py 1 2 1'
+  mega_backup_split:
+    image: mega_backup
+    container_name: mega_backup_split
+    hostname: mega_backup_split
+    env_file: mega_backup.env
+    restart: always
+    volumes:
+      - .:/usr/src/app
+    command: bash -c 'python -u mega_sql_script.py 0 30 0'
