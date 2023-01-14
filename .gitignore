@@ -7,7 +7,6 @@ db_bak_tmp
 db_bak_path
 mega_backup
 mega_backup.env
-.env
 test*
 
 # Node artifact files

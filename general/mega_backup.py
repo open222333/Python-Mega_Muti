@@ -340,6 +340,11 @@ class MegaListen:
         """
         self.file_extensions = extension
 
+    def show_message(self):
+        """顯示訊息
+        """
+        self.show_msg = True
+
     def set_expired_days(self, days: int):
         """設置過期天數
 
@@ -402,13 +407,14 @@ class MegaListen:
         while True:
             for file in os.listdir(self.dir_path):
 
-                # msg = {
-                #     'files': os.listdir(self.dir_path),
-                #     'file': file,
-                #     'check_filename': self.__check_filename(file),
-                #     'check_extension': self.__check_extension(file)
-                # }
-                # pprint(msg)
+                if self.show_msg:
+                    msg = {
+                        'files': os.listdir(self.dir_path),
+                        'file': file,
+                        'check_filename': self.__check_filename(file),
+                        'check_extension': self.__check_extension(file)
+                    }
+                    pprint(msg)
 
                 if self.__check_filename(file) and self.__check_extension(file):
                     if self.is_upload:

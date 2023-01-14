@@ -1,0 +1,12 @@
+version: '3'
+services:
+  mega_backup:
+    build: .
+    image: mega_backup
+    container_name: mega_backup
+    hostname: mega_backup
+    env_file: mega_backup.env
+    restart: always
+    volumes:
+      - .:/usr/src/app
+    command: bash -c 'python -u mega_sql_script.py 0 2 1'
