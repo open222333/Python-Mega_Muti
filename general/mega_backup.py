@@ -1,15 +1,16 @@
 from datetime import datetime
 from mega import Mega
 from time import sleep, time
+import logging
 import re
 import os
 
 # 測試
 from pprint import pprint
 
-REMOTE_AVDATA_MONGO = os.environ.get('REMOTE_AVDATA_MONGO')
-NGS_AVDATA_HOST = os.environ.get('NGS_AVDATA_HOST')
-MEGA_LISTEN_DIR = os.environ.get('MEGA_LISTEN_DIR')
+
+logger = logging.getLogger('mega_backup')
+logger.setLevel(logging.DEBUG)
 
 
 class MegaBackupFile:
@@ -253,7 +254,7 @@ class MegaBackupFile:
             return True
         return False
 
-    def __check_mega_files(self):
+    def check_mega_files(self):
         """刪除過期的mega檔案
         """
         start = time()
@@ -297,9 +298,6 @@ class MegaBackupFile:
         # 非測試時 刪除檔案
         if not self.test:
             self.__remove_file(path)
-
-        # 刪除過期的mega檔案
-        self.__check_mega_files()
 
 
 class MegaListen:
@@ -385,7 +383,6 @@ class MegaListen:
         else:
             return True
 
-
     def __check_filename(self, filename: str):
         """檢查檔名是否匹配
         若無設置pattern 則回傳True
@@ -451,7 +448,16 @@ class MegaListen:
                             mbf.run()
                     else:
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+
+                        if not self.test:
+                            mbf.set_mega_auth(self.mega_account, self.mega_password)
+
+                        if self.expired_days:
+                            mbf.set_expired_days(self.expired_days)
+
                         mbf.run_split()
+                        # 刪除過期的mega檔案
+                        mbf.check_mega_files()
 
                     self.is_sleep = False
             else:
