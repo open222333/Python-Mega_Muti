@@ -41,18 +41,11 @@ type_dict = {
 }
 
 setting_info = {
-    'MEGA_ACCOUNT': MEGA_ACCOUNT,
-    'MEGA_PASSWORD': MEGA_PASSWORD,
-    'MEGA_TEST_FILE': MEGA_TEST_FILE,
-    'MEGA_LISTEN_DIR': MEGA_LISTEN_DIR,
-    'MEGA_EXPIRED_DAYS': MEGA_EXPIRED_DAYS,
-    'TEST': IS_TEST,
-    'LISTEN_TYPE': type_dict[listen_type],
-    'UPLOAD_ID': mega_upload_id,
-    'SCHEDULE_QUANTITY': mega_schedule_quantity
+    'MEGA帳號': MEGA_ACCOUNT,
+    'MEGA密碼': MEGA_PASSWORD,
+    '是否為測試': IS_TEST,
+    '監聽功能': type_dict[listen_type]
 }
-
-pprint(setting_info)
 
 ml = MegaListen(
     dir_path=MEGA_LISTEN_DIR,
@@ -68,9 +61,15 @@ if listen_type == 0:
 elif listen_type == 1:
     # 上傳設定
     ml.set_pattern(r'\.tar\._[\d]{1,10}')
+    setting_info['監聽資料夾'] = MEGA_LISTEN_DIR
+    setting_info['上傳 ID'] = mega_upload_id
+    setting_info['上傳 執行總數'] = mega_schedule_quantity
 elif listen_type == 2:
     # 過期天數設定
     ml.set_expired_days(MEGA_EXPIRED_DAYS)
+    setting_info['保留天數'] = MEGA_EXPIRED_DAYS
+
+pprint(setting_info)
 
 ml.set_schedule_quantity(mega_schedule_quantity)
 ml.listen(cannal_id=mega_upload_id)
