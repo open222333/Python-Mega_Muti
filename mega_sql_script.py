@@ -15,13 +15,14 @@ if argv_len == 4:
     try:
         mega_upload_id = int(sys.argv[1])
         mega_schedule_quantity = int(sys.argv[2])
-        is_upload = int(sys.argv[3])
+        listen_type = int(sys.argv[3])
     except Exception as e:
         print(e)
 
 if MEGA_LISTEN_DIR == '':
-    MEGA_LISTEN_DIR = f'{os.path.dirname(__file__)}/target_dir'
-    os.mkdir(MEGA_LISTEN_DIR)
+    MEGA_LISTEN_DIR = 'target_dir'
+    if not os.path.exists(MEGA_LISTEN_DIR):
+        os.mkdir(MEGA_LISTEN_DIR)
 else:
     MEGA_LISTEN_DIR = MEGA_LISTEN_DIR
 
@@ -41,7 +42,12 @@ setting_info = {
     'SCHEDULE_QUANTITY': mega_schedule_quantity
 }
 
-pprint(setting_info)
+setting_info = {
+    'MEGA帳號': MEGA_ACCOUNT,
+    'MEGA密碼': MEGA_PASSWORD,
+    '是否為測試': IS_TEST,
+    '監聽功能': type_dict[listen_type]
+}
 
 ml = MegaListen(
     dir_path=MEGA_LISTEN_DIR,
@@ -50,10 +56,19 @@ ml = MegaListen(
     upload=bool(is_upload)
 )
 
-if setting_info['UPLOAD']:
-    ml.set_pattern(r'\.tar\._[\d]{1,10}')
-else:
+if listen_type == 0:
+    # 分割設定
     ml.set_file_extension('tar')
+elif listen_type == 1:
+    # 上傳設定
+    ml.set_pattern(r'\.tar\._[\d]{1,10}')
+    setting_info['監聽資料夾'] = MEGA_LISTEN_DIR
+    setting_info['上傳 ID'] = mega_upload_id
+    setting_info['上傳 執行總數'] = mega_schedule_quantity
+elif listen_type == 2:
+    # 過期天數設定
+    ml.set_expired_days(MEGA_EXPIRED_DAYS)
+    setting_info['保留天數'] = MEGA_EXPIRED_DAYS
 
 # 過期天數設定
 ml.set_expired_days(MEGA_EXPIRED_DAYS)

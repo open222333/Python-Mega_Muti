@@ -306,7 +306,7 @@ class MegaListen:
     """監聽資料夾 若有符合條間的檔案則執行上傳至mega
     """
 
-    def __init__(self, dir_path: str, mega_account: str, mega_password: str, test=False, upload=True) -> None:
+    def __init__(self, dir_path: str, mega_account: str, mega_password: str, listen_type: int = 1, test=False) -> None:
         """_summary_
 
         Args:
@@ -314,9 +314,16 @@ class MegaListen:
             mega_account (str): mega帳號
             mega_password (str): mega密碼
             test (bool, optional): 是否為測試. Defaults to False.
+            listen_type (int): 0: 'split', 1: 'upload', 2: 'check_expired_file' . Defaults to 1.
         """
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
+
+        type_dict = {
+            0: 'split',
+            1: 'upload',
+            2: 'check_expired_file'
+        }
 
         self.dir_path = dir_path
 
@@ -326,7 +333,7 @@ class MegaListen:
         self.mega_password = mega_password
 
         self.test = test
-        self.is_upload = upload
+        self.listen_type = type_dict[listen_type]
         self.is_sleep = False
         self.file_extensions = None
         self.pattern = None
@@ -416,7 +423,7 @@ class MegaListen:
                     pprint(msg)
 
                 if self.__check_filename(file) and self.__check_extension(file):
-                    if self.is_upload:
+                    if self.listen_type == 'upload':
                         if self.schedule_quantity > 0:
                             split_num = int(re.findall(r'\.tar\._(.*)', file)[0])
                             s_info = {
@@ -448,16 +455,16 @@ class MegaListen:
                                 mbf.set_expired_days(self.expired_days)
 
                             mbf.run()
-                    else:
+                    elif self.listen_type == 'split':
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-
+                        mbf.run_split()
+                    elif self.listen_type == 'check_expired_file':
+                        mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
                         if not self.test:
                             mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                         if self.expired_days:
                             mbf.set_expired_days(self.expired_days)
-
-                        mbf.run_split()
                         # 刪除過期的mega檔案
                         mbf.check_mega_files()
 
