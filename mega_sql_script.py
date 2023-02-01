@@ -8,9 +8,7 @@ import os
 MEGA_ACCOUNT = os.environ.get('MEGA_ACCOUNT')
 MEGA_PASSWORD = os.environ.get('MEGA_PASSWORD')
 MEGA_LISTEN_DIR = os.environ.get('MEGA_LISTEN_DIR', '')
-MEGA_TEST_FILE = os.environ.get('MEGA_TEST_FILE', '')
 MEGA_EXPIRED_DAYS = os.environ.get('MEGA_EXPIRED_DAYS', None)
-IS_TEST = os.environ.get('MEGA_LISTEN_IS_TEST', False)
 
 argv_len = len(sys.argv)
 if argv_len == 4:
@@ -36,10 +34,8 @@ except TypeError as err:
 setting_info = {
     'MEGA_ACCOUNT': MEGA_ACCOUNT,
     'MEGA_PASSWORD': MEGA_PASSWORD,
-    'MEGA_TEST_FILE': MEGA_TEST_FILE,
     'MEGA_LISTEN_DIR': MEGA_LISTEN_DIR,
     'MEGA_EXPIRED_DAYS': MEGA_EXPIRED_DAYS,
-    'TEST': IS_TEST,
     'UPLOAD': bool(is_upload),
     'UPLOAD_ID': mega_upload_id,
     'SCHEDULE_QUANTITY': mega_schedule_quantity
@@ -51,7 +47,6 @@ ml = MegaListen(
     dir_path=MEGA_LISTEN_DIR,
     mega_account=MEGA_ACCOUNT,
     mega_password=MEGA_PASSWORD,
-    test=IS_TEST,
     upload=bool(is_upload)
 )
 
@@ -61,7 +56,7 @@ else:
     ml.set_file_extension('tar')
 
 # 過期天數設定
-ml.set_expired_days = MEGA_EXPIRED_DAYS
+ml.set_expired_days(MEGA_EXPIRED_DAYS)
 
 ml.set_schedule_quantity(mega_schedule_quantity)
 ml.listen(cannal_id=mega_upload_id)

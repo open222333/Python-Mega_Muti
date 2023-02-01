@@ -1,16 +1,22 @@
 from datetime import datetime
 from mega import Mega
 from time import sleep, time
-import logging
 import re
 import os
 
 # 測試
 from pprint import pprint
 
+from logging.handlers import TimedRotatingFileHandler
+import logging
+
 
 logger = logging.getLogger('mega_backup')
 logger.setLevel(logging.DEBUG)
+log_handler = TimedRotatingFileHandler('mega.log', maxBytes=0, backupCount=10)
+log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_handler.setFormatter(log_formatter)
+logger.addHandler(log_handler)
 
 
 class MegaBackupFile:
@@ -26,11 +32,7 @@ class MegaBackupFile:
         """
         self.file_path = file_path
 
-        if mega_folder:
-            self.mega_folder = mega_folder
-        else:
-            self.mega_folder = 'ProductUpload'
-
+        self.mega_folder = mega_folder
         self.mega_folder_id = None
 
         self.record_json_path = 'data_record.json'

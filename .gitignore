@@ -3,11 +3,10 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
-db_bak_tmp
-db_bak_path
 mega_backup
-mega_backup.env
 test*
+
+mega.env
 
 # Node artifact files
 node_modules/

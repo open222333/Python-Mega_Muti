@@ -5,7 +5,7 @@ services:
     image: mega_backup
     container_name: mega_backup
     hostname: mega_backup
-    env_file: mega_backup.env
+    env_file: mega.env
     restart: always
     volumes:
       - .:/usr/src/app
