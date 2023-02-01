@@ -1,19 +1,53 @@
 from datetime import datetime
 from mega import Mega
 from time import sleep, time
+from traceback import format_exc
+from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
+import logging
 import re
 import os
 
-# 測試
-from pprint import pprint
 
-from logging.handlers import TimedRotatingFileHandler
-import logging
+try:
+    # 關閉log
+    DISABLE_LOG = int(os.environ.get('DISABLE_LOG'))
+    # 設定紀錄log等級 預設DEBUG, DEBUG,INFO,WARNING,ERROR,CRITICAL
+    LOG_DEBUG_LEVEL = os.environ.get('LOG_DEBUG_LEVEL', 'DEBUG')
+except:
+    format_exc()
 
+try:
+    LOG_SIZE = int(os.environ.get('LOG_SIZE'))
+    LOG_DAYS = int(os.environ.get('LOG_DAYS'))
+except:
+    format_exc()
 
-logger = logging.getLogger('mega_backup')
-logger.setLevel(logging.DEBUG)
-log_handler = TimedRotatingFileHandler('mega.log', maxBytes=0, backupCount=10)
+if DISABLE_LOG:
+    logging.disable(logging.CRITICAL)
+
+logger = logging.getLogger('mega備份')
+
+if LOG_DEBUG_LEVEL == 'INFO':
+    logger.setLevel(logging.INFO)
+elif LOG_DEBUG_LEVEL == 'WARNING':
+    logger.setLevel(logging.WARNING)
+elif LOG_DEBUG_LEVEL == 'ERROR':
+    logger.setLevel(logging.ERROR)
+elif LOG_DEBUG_LEVEL == 'CRITICAL':
+    logger.setLevel(logging.CRITICAL)
+else:
+    logger.setLevel(logging.DEBUG)
+
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+if LOG_SIZE:
+    log_handler = RotatingFileHandler('logs/mega.log', maxBytes=LOG_SIZE, backupCount=5)
+elif LOG_DAYS:
+    log_handler = TimedRotatingFileHandler('logs/mega.log', when='D', backupCount=LOG_DAYS)
+else:
+    log_handler = TimedRotatingFileHandler('logs/mega.log', when='D', backupCount=7)
+
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
@@ -28,20 +62,17 @@ class MegaBackupFile:
 
         Args:
             file_path (str): 路徑
-            mega_folder (str): 上傳的資料夾名稱
+            mega_folder (str): 上傳的資料夾名稱, Defaults to None.
+            test (bool): 是否為測試. Defaults to False.
         """
         self.file_path = file_path
 
         self.mega_folder = mega_folder
         self.mega_folder_id = None
 
-        self.record_json_path = 'data_record.json'
-        self.record = None
-
         self.chunk_size = 500000000
-        self.test = test
-
         self.expired_days = 7
+        self.test = test
 
     def set_mega_auth(self, account: str, password: str):
         """
@@ -70,11 +101,13 @@ class MegaBackupFile:
         """
         self.expired_days = days
 
-    def set_mega_folder_id(self, mega_folder_id):
-        self.mega_folder_id = mega_folder_id
+    def set_mega_folder_id(self, mega_folder_id: str):
+        """設置mega資料夾id
 
-    def get_mega_folder_id_from_mega(self):
-        mega_folder_id = self.mega_client.find()
+        Args:
+            mega_folder_id (str): mega id
+        """
+        self.mega_folder_id = mega_folder_id
 
     def __get_time_str(self, total_secends: int) -> str:
         """依照秒數 回傳時間
@@ -117,7 +150,7 @@ class MegaBackupFile:
         Args:
             msg (str): 訊息內容
         """
-        print(f'=== {msg} ===')
+        logger.info(f'=== {msg} ===')
 
     def __split_file(self, path: str, chunk_size: int = 1024 * 1024 * 5, filename: str = None):
         """分割檔案
@@ -135,15 +168,18 @@ class MegaBackupFile:
 
         self.__print_msg(f'分割 {filename} 開始')
 
-        with open(path, 'rb') as f:
-            chunk = f.read(chunk_size)
-            while chunk:
-                split_file = f'{file_dir}/{filename}._{str(file_number)}'
-                with open(f"{split_file}.temp", 'wb') as chunk_file:
-                    chunk_file.write(chunk)
-                os.rename(f"{split_file}.temp", split_file)
-                file_number += 1
+        try:
+            with open(path, 'rb') as f:
                 chunk = f.read(chunk_size)
+                while chunk:
+                    split_file = f'{file_dir}/{filename}._{str(file_number)}'
+                    with open(f"{split_file}.temp", 'wb') as chunk_file:
+                        chunk_file.write(chunk)
+                    os.rename(f"{split_file}.temp", split_file)
+                    file_number += 1
+                    chunk = f.read(chunk_size)
+        except Exception as err:
+            logger.error(err)
 
         self.__print_msg(f'分割 {filename} 結束')
 
@@ -161,7 +197,7 @@ class MegaBackupFile:
         self.__print_msg(f'合併 {filename} 開始')
 
         command = f'cat {file_dir}/{filename}* >> {file_dir}/{filename}'
-        print(command)
+        logger.info(command)
         os.system(command)
 
         self.__print_msg(f'合併 {filename} 結束')
@@ -183,20 +219,18 @@ class MegaBackupFile:
 
         upload_start_time = time()
 
-        if not self.test:
-            mega_info = self.mega_client.upload(
-                filename=path,
-                dest=self.mega_folder_id,
-                dest_filename=filename
-            )
+        mega_info = self.mega_client.upload(
+            filename=path,
+            dest=self.mega_folder_id,
+            dest_filename=filename
+        )
 
         upload_end_time = time()
 
         take_time = self.__get_time_str(int(round(upload_end_time - upload_start_time, 0)))
         self.__print_msg(f'上傳資料 {filename} 至 {self.mega_folder} 完成,耗時{take_time}')
 
-        if not self.test:
-            return mega_info
+        return mega_info
 
     def __remove_mega_file_by_private_id(self, private_id, filename=None):
         """根據 private_id 刪除mega上檔案
@@ -211,7 +245,10 @@ class MegaBackupFile:
             filename = private_id
 
         self.__print_msg(f'刪除mega上的 {filename} 開始')
-        self.mega_client.destroy(private_id)
+        try:
+            self.mega_client.destroy(private_id)
+        except Exception as err:
+            logger.error(err)
         self.__print_msg(f'刪除mega上的 {filename} 結束')
 
     def __remove_file(self, path: str):
@@ -222,7 +259,10 @@ class MegaBackupFile:
         """
         filename = os.path.basename(path)
         self.__print_msg(f'刪除 {filename} 開始')
-        os.remove(path)
+        try:
+            os.remove(path)
+        except Exception as err:
+            logger.error(err)
         self.__print_msg(f'刪除 {filename} 結束')
 
     def __get_mega_folder_files(self):
@@ -294,8 +334,8 @@ class MegaBackupFile:
             path = self.file_path
 
         info = self.__upload_to_mega(path)
-        if self.test:
-            pprint(info)
+        # 非測試時
+        logger.info(info)
 
         # 非測試時 刪除檔案
         if not self.test:
@@ -346,11 +386,6 @@ class MegaListen:
         extension: 指定副檔名
         """
         self.file_extensions = extension
-
-    def show_message(self):
-        """顯示訊息
-        """
-        self.show_msg = True
 
     def set_expired_days(self, days: int):
         """設置過期天數
@@ -413,14 +448,13 @@ class MegaListen:
         while True:
             for file in os.listdir(self.dir_path):
 
-                if self.show_msg:
-                    msg = {
-                        'files': os.listdir(self.dir_path),
-                        'file': file,
-                        'check_filename': self.__check_filename(file),
-                        'check_extension': self.__check_extension(file)
-                    }
-                    pprint(msg)
+                msg = {
+                    'files': os.listdir(self.dir_path),
+                    'file': file,
+                    'check_filename': self.__check_filename(file),
+                    'check_extension': self.__check_extension(file)
+                }
+                logger.info(msg)
 
                 if self.__check_filename(file) and self.__check_extension(file):
                     if self.listen_type == 'upload':
@@ -432,36 +466,25 @@ class MegaListen:
                                 'cannal_id': cannal_id,
                                 'remainder': split_num % self.schedule_quantity
                             }
-                            pprint(s_info)
-
+                            logger.info(s_info)
                             if s_info['remainder'] == s_info['cannal_id']:
-
                                 mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-
-                                if not self.test:
-                                    mbf.set_mega_auth(self.mega_account, self.mega_password)
-
+                                mbf.set_mega_auth(self.mega_account, self.mega_password)
                                 if self.expired_days:
                                     mbf.set_expired_days(self.expired_days)
-
                                 mbf.run()
                         else:
                             mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-
-                            if not self.test:
-                                mbf.set_mega_auth(self.mega_account, self.mega_password)
-
+                            mbf.set_mega_auth(self.mega_account, self.mega_password)
                             if self.expired_days:
                                 mbf.set_expired_days(self.expired_days)
-
                             mbf.run()
                     elif self.listen_type == 'split':
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
                         mbf.run_split()
                     elif self.listen_type == 'check_expired_file':
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-                        if not self.test:
-                            mbf.set_mega_auth(self.mega_account, self.mega_password)
+                        mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                         if self.expired_days:
                             mbf.set_expired_days(self.expired_days)
