@@ -17,13 +17,14 @@ if argv_len == 4:
     try:
         mega_upload_id = int(sys.argv[1])
         mega_schedule_quantity = int(sys.argv[2])
-        is_upload = int(sys.argv[3])
+        listen_type = int(sys.argv[3])
     except Exception as e:
         print(e)
 
 if MEGA_LISTEN_DIR == '':
-    MEGA_LISTEN_DIR = f'{os.path.dirname(__file__)}/target_dir'
-    os.mkdir(MEGA_LISTEN_DIR)
+    MEGA_LISTEN_DIR = 'target_dir'
+    if not os.path.exists(MEGA_LISTEN_DIR):
+        os.mkdir(MEGA_LISTEN_DIR)
 else:
     MEGA_LISTEN_DIR = MEGA_LISTEN_DIR
 
@@ -33,6 +34,12 @@ try:
 except TypeError as err:
     format_exc()
 
+type_dict = {
+    0: '分割',
+    1: '上傳',
+    2: '檢查過期'
+}
+
 setting_info = {
     'MEGA_ACCOUNT': MEGA_ACCOUNT,
     'MEGA_PASSWORD': MEGA_PASSWORD,
@@ -40,7 +47,7 @@ setting_info = {
     'MEGA_LISTEN_DIR': MEGA_LISTEN_DIR,
     'MEGA_EXPIRED_DAYS': MEGA_EXPIRED_DAYS,
     'TEST': IS_TEST,
-    'UPLOAD': bool(is_upload),
+    'LISTEN_TYPE': type_dict[listen_type],
     'UPLOAD_ID': mega_upload_id,
     'SCHEDULE_QUANTITY': mega_schedule_quantity
 }
@@ -52,16 +59,18 @@ ml = MegaListen(
     mega_account=MEGA_ACCOUNT,
     mega_password=MEGA_PASSWORD,
     test=IS_TEST,
-    upload=bool(is_upload)
+    listen_type=listen_type
 )
 
-if setting_info['UPLOAD']:
-    ml.set_pattern(r'\.tar\._[\d]{1,10}')
-else:
+if listen_type == 0:
+    # 分割設定
     ml.set_file_extension('tar')
-
-# 過期天數設定
-ml.set_expired_days = MEGA_EXPIRED_DAYS
+elif listen_type == 1:
+    # 上傳設定
+    ml.set_pattern(r'\.tar\._[\d]{1,10}')
+elif listen_type == 2:
+    # 過期天數設定
+    ml.set_expired_days(MEGA_EXPIRED_DAYS)
 
 ml.set_schedule_quantity(mega_schedule_quantity)
 ml.listen(cannal_id=mega_upload_id)
