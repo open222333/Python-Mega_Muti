@@ -11,8 +11,8 @@ import os
 try:
     # 關閉log
     DISABLE_LOG = int(os.environ.get('DISABLE_LOG'))
-    # 設定紀錄log等級 預設DEBUG, DEBUG,INFO,WARNING,ERROR,CRITICAL
-    LOG_DEBUG_LEVEL = os.environ.get('LOG_DEBUG_LEVEL', 'DEBUG')
+    # 設定紀錄log等級 預設WARNING, DEBUG,INFO,WARNING,ERROR,CRITICAL
+    LOG_DEBUG_LEVEL = os.environ.get('LOG_DEBUG_LEVEL', 'WARNING')
 except:
     format_exc()
 
@@ -27,7 +27,9 @@ if DISABLE_LOG:
 
 logger = logging.getLogger('mega備份')
 
-if LOG_DEBUG_LEVEL == 'INFO':
+if LOG_DEBUG_LEVEL == 'DEBUG':
+    logger.setLevel(logging.DEBUG)
+elif LOG_DEBUG_LEVEL == 'INFO':
     logger.setLevel(logging.INFO)
 elif LOG_DEBUG_LEVEL == 'WARNING':
     logger.setLevel(logging.WARNING)
@@ -35,8 +37,6 @@ elif LOG_DEBUG_LEVEL == 'ERROR':
     logger.setLevel(logging.ERROR)
 elif LOG_DEBUG_LEVEL == 'CRITICAL':
     logger.setLevel(logging.CRITICAL)
-else:
-    logger.setLevel(logging.DEBUG)
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
