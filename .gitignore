@@ -4,6 +4,7 @@
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
 mega_backup
+target_dir
 test*
 
 mega.env

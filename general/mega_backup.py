@@ -1,56 +1,11 @@
 from datetime import datetime
 from mega import Mega
 from time import sleep, time
-from traceback import format_exc
-from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
-import logging
+from .mega_log import logger
+import traceback
+import json
 import re
 import os
-
-
-try:
-    # 關閉log
-    DISABLE_LOG = int(os.environ.get('DISABLE_LOG'))
-    # 設定紀錄log等級 預設WARNING, DEBUG,INFO,WARNING,ERROR,CRITICAL
-    LOG_DEBUG_LEVEL = os.environ.get('LOG_DEBUG_LEVEL', 'WARNING')
-except:
-    format_exc()
-
-try:
-    LOG_SIZE = int(os.environ.get('LOG_SIZE'))
-    LOG_DAYS = int(os.environ.get('LOG_DAYS'))
-except:
-    format_exc()
-
-if DISABLE_LOG:
-    logging.disable(logging.CRITICAL)
-
-logger = logging.getLogger('mega備份')
-
-if LOG_DEBUG_LEVEL == 'DEBUG':
-    logger.setLevel(logging.DEBUG)
-elif LOG_DEBUG_LEVEL == 'INFO':
-    logger.setLevel(logging.INFO)
-elif LOG_DEBUG_LEVEL == 'WARNING':
-    logger.setLevel(logging.WARNING)
-elif LOG_DEBUG_LEVEL == 'ERROR':
-    logger.setLevel(logging.ERROR)
-elif LOG_DEBUG_LEVEL == 'CRITICAL':
-    logger.setLevel(logging.CRITICAL)
-
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-
-if LOG_SIZE:
-    log_handler = RotatingFileHandler('logs/mega.log', maxBytes=LOG_SIZE, backupCount=5)
-elif LOG_DAYS:
-    log_handler = TimedRotatingFileHandler('logs/mega.log', when='D', backupCount=LOG_DAYS)
-else:
-    log_handler = TimedRotatingFileHandler('logs/mega.log', when='D', backupCount=7)
-
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_handler.setFormatter(log_formatter)
-logger.addHandler(log_handler)
 
 
 class MegaBackupFile:
@@ -62,13 +17,18 @@ class MegaBackupFile:
 
         Args:
             file_path (str): 路徑
-            mega_folder (str): 上傳的資料夾名稱, Defaults to None.
+            mega_folder (str): 上傳的資料夾名稱. Defaults to None.
+            mega_folder_id (str): 上傳的資料夾id. Defaults to None.
             test (bool): 是否為測試. Defaults to False.
         """
         self.file_path = file_path
 
         self.mega_folder = mega_folder
         self.mega_folder_id = None
+
+        self.sub_f = False
+        self.sub_folder_id = None
+        self.sub_folder_name = None
 
         self.chunk_size = 500000000
         self.expired_days = 7
@@ -82,7 +42,7 @@ class MegaBackupFile:
             account (str): mega 帳號
             password (str): mega 密碼
         """
-        mega = Mega()
+        mega = Mega_Custom()
         self.mega_client = mega.login(account, password)
 
     def set_chunk_size(self, size: int):
@@ -101,13 +61,36 @@ class MegaBackupFile:
         """
         self.expired_days = days
 
-    def set_mega_folder_id(self, mega_folder_id: str):
-        """設置mega資料夾id
+    def set_sub_folder_upload_on(self):
+        """使用子資料夾資訊上傳
+        """
+        self.sub_f = True
+
+    def set_sub_folder_upload_off(self):
+        """關閉使用子資料夾資訊上傳
+        """
+        self.sub_f = False
+
+
+    def set_folder_info(self, folder_id: str, folder_name: str):
+        """設置mega資料夾資訊
 
         Args:
-            mega_folder_id (str): mega id
+            folder_id (str): 資料夾id
+            folder_name (str): 資料夾名稱
         """
-        self.mega_folder_id = mega_folder_id
+        self.mega_folder_id = folder_id
+        self.mega_folder = folder_name
+
+    def set_sub_folder_info(self, folder_id: str, folder_name: str):
+        """設置mega子資料夾資訊
+
+        Args:
+            folder_id (str): 子資料夾id
+            folder_name (str): 子資料夾名稱
+        """
+        self.sub_folder_id = folder_id
+        self.sub_folder_name = folder_name
 
     def __get_time_str(self, total_secends: int) -> str:
         """依照秒數 回傳時間
@@ -197,38 +180,66 @@ class MegaBackupFile:
         self.__print_msg(f'合併 {filename} 開始')
 
         command = f'cat {file_dir}/{filename}* >> {file_dir}/{filename}'
-        logger.info(command)
+        logger.debug(command)
         os.system(command)
 
         self.__print_msg(f'合併 {filename} 結束')
 
-    def __upload_to_mega(self, path: str):
+    def create_folder(self, name: str, folder_id: str = None) -> dict:
+        """建立mega資料夾 回傳資料夾名稱 資料夾id
+
+        Args:
+            name (str): 指定資料夾名稱
+            folder_id (str, optional): 指定父資料夾id. Defaults to None.
+
+        Returns:
+            dict: 回傳資料夾名稱 資料夾id {name:id}
+        """
+        if not folder_id:
+            info = self.mega_client.create_folder_from_id(name, folder_id)
+        else:
+            info = self.mega_client.create_folder_from_id(name, self.mega_folder_id)
+        return info
+
+
+    def __upload_to_mega(self, path: str, folder_id: str = None, folder_name: str = None):
         """上傳至mega
 
         Args:
             path (str): 檔案路徑
+            folder_id (str): 指定上傳目標資料夾id. Defaults to self.mega_folder_id.
+            folder_name (str): 指定上傳目標資料夾名稱. Defaults to self.mega_folder.
 
         Returns:
-            _type_: 非測試時回傳上傳資訊
+            _type_: 回傳上傳資訊
         """
         # 取得檔案大小 MB
         tar_size = round(os.path.getsize(path) / float(1000 * 1000), 2)
         filename = os.path.basename(path)
 
-        self.__print_msg(f'上傳資料 {filename} 至 {self.mega_folder}, 檔案大小 {tar_size} MB')
+        if not folder_name:
+            folder_name = self.mega_folder
+
+        if not folder_id:
+            folder_id = self.mega_folder_id
+
+        self.__print_msg(f'上傳資料 {filename} 至 {folder_name}, 檔案大小 {tar_size} MB')
 
         upload_start_time = time()
 
         mega_info = self.mega_client.upload(
             filename=path,
-            dest=self.mega_folder_id,
+            dest=folder_id,
             dest_filename=filename
         )
+
+        logger.debug(mega_info)
 
         upload_end_time = time()
 
         take_time = self.__get_time_str(int(round(upload_end_time - upload_start_time, 0)))
-        self.__print_msg(f'上傳資料 {filename} 至 {self.mega_folder} 完成,耗時{take_time}')
+
+        self.__print_msg(f'上傳資料 {filename} 至 {folder_name} 完成,耗時{take_time}')
 
         return mega_info
 
@@ -302,10 +313,21 @@ class MegaBackupFile:
         start = time()
         self.__print_msg(f'檢查已超過{self.expired_days}天的檔案')
         files = self.__get_mega_folder_files()
+
+        # 紀錄已處理的id
+        processed_id = []
+
         for private_id, info in files.items():
-            if self.__is_expired(info['ts']):
-                self.__print_msg(f'{info["a"]["n"]} 創建日期{self.__get_date(info["ts"])} 已超過{self.expired_days}天')
-                self.__remove_mega_file_by_private_id(private_id, info['a']['n'])
+            if private_id not in processed_id:
+                processed_id.append(private_id)
+                if self.__is_expired(info['ts']):
+                    if isinstance(info['a'], dict):
+                        self.__print_msg(f'{info["a"]["n"]} 創建日期{self.__get_date(info["ts"])} 已超過{self.expired_days}天')
+                        self.__remove_mega_file_by_private_id(private_id, info['a']['n'])
+                    else:
+                        self.__print_msg(f'{info["a"]} 創建日期{self.__get_date(info["ts"])} 已超過{self.expired_days}天')
+                        self.__remove_mega_file_by_private_id(private_id, info['a'])
+
         end = time()
         self.__print_msg(f'檢查完畢 耗時{self.__get_time_str(int(round(end - start)))}')
 
@@ -333,9 +355,13 @@ class MegaBackupFile:
         if path == None:
             path = self.file_path
 
-        info = self.__upload_to_mega(path)
+        if self.sub_f:
+            info = self.__upload_to_mega(path, self.sub_folder_id, f'{self.mega_folder}/{self.sub_folder_name}')
+        else:
+            info = self.__upload_to_mega(path)
+
         # 非測試時
-        logger.info(info)
+        logger.debug(info)
 
         # 非測試時 刪除檔案
         if not self.test:
@@ -380,6 +406,8 @@ class MegaListen:
 
         self.expired_days = None
 
+        self.date = datetime.now().__format__("%Y%m%d")
+
     def set_file_extension(self, *extension: str):
         """設置 篩選副檔名條件
 
@@ -410,6 +438,55 @@ class MegaListen:
             pattern (_type_): re規則
         """
         self.pattern = pattern
+
+    def set_date(self, date: str):
+        """設定日期 格式: 20230101
+
+        Args:
+            date (_type_): 格式: 20230101
+        """
+        self.date = date
+
+    def set_folder_id(self, folder_id: str):
+        """設定資料夾ID
+
+        Args:
+            folder_id (_type_): 資料夾id
+        """
+        self.folder_id = folder_id
+
+    def set_sub_folder_info(self, folder_name: str, folder_id: str):
+        """設置json紀錄子資料夾資訊
+
+        Args:
+            folder_name (str): 子資料夾名稱
+            folder_id (str): 子資料夾id
+        """
+        sub_f_info = {
+            'name': folder_name,
+            'folder_id': folder_id
+        }
+        with open('sub_folder_info.json', 'w') as f:
+            try:
+                f.write(json.dumps(sub_f_info))
+            except Exception as err:
+                logger.error(f'{err}\n{traceback.format_exc()}')
+
+    def get_sub_folder_info(self):
+        """取得json紀錄子資料夾資訊
+
+        Returns:
+            _type_:
+            格式：{
+                'name': folder_name,
+                'folder_id': folder_id
+            }
+        """
+        with open('sub_folder_info.json', 'r') as f:
+            try:
+                return json.loads(f.read())
+            except Exception as err:
+                logger.error(f'{err}\n{traceback.format_exc()}')
 
     def __check_extension(self, filename: str):
         """檢查 是否符合副檔名條件
@@ -454,7 +531,8 @@ class MegaListen:
                     'check_filename': self.__check_filename(file),
                     'check_extension': self.__check_extension(file)
                 }
-                logger.info(msg)
+                
+                logger.debug(msg)
 
                 if self.__check_filename(file) and self.__check_extension(file):
                     if self.listen_type == 'upload':
@@ -466,21 +544,59 @@ class MegaListen:
                                 'cannal_id': cannal_id,
                                 'remainder': split_num % self.schedule_quantity
                             }
-                            logger.info(s_info)
+                            logger.debug(s_info)
+
                             if s_info['remainder'] == s_info['cannal_id']:
                                 mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+
+
                                 mbf.set_mega_auth(self.mega_account, self.mega_password)
                                 if self.expired_days:
                                     mbf.set_expired_days(self.expired_days)
+
+                                try:
+                                    sub_f_info = self.get_sub_folder_info()
+                                    mbf.set_sub_folder_info(
+                                        folder_id=sub_f_info['folder_id'],
+                                        folder_name=sub_f_info['name']
+                                    )
+                                    mbf.set_sub_folder_upload_on()
+                                except Exception as err:
+                                    logger.error(f'{err}/n{traceback.format_exc()}')
+                                    mbf.set_sub_folder_upload_off()
+
                                 mbf.run()
                         else:
                             mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+
                             mbf.set_mega_auth(self.mega_account, self.mega_password)
+
                             if self.expired_days:
                                 mbf.set_expired_days(self.expired_days)
+
+                            try:
+                                sub_f_info = self.get_sub_folder_info()
+                                mbf.set_sub_folder_info(
+                                    folder_id=sub_f_info['folder_id'],
+                                    folder_name=sub_f_info['name']
+                                )
+                                mbf.set_sub_folder_upload_on()
+                            except Exception as err:
+                                logger.error(f'{err}/n{traceback.format_exc()}')
+                                mbf.set_sub_folder_upload_off()
+
                             mbf.run()
                     elif self.listen_type == 'split':
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+
+                        # 建立日期子資料夾
+                        today = datetime.now().__format__("%Y%m%d")
+                        if today != self.date:
+                            self.set_date(today)
+                            sub_f_info = mbf.create_folder(self.date, mbf.mega_folder_id)
+                            self.set_sub_folder_info(self.date, sub_f_info[self.date])
+
+                        # 分割
                         mbf.run_split()
                     elif self.listen_type == 'check_expired_file':
                         mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
@@ -497,3 +613,25 @@ class MegaListen:
                     self.is_sleep = True
                     print('等候中')
                 sleep(1)
+
+
+class Mega_Custom(Mega):
+    """繼承Mega套件 客製化功能
+    """
+
+    def create_folder_from_id(self, directory_name, parent_node_id):
+        """依照資料夾id 在資料夾內建立新資料夾
+
+        Args:
+            directory_name (_type_): 新資料夾名稱
+            parent_node_id (_type_): 資料夾id
+
+        Returns:
+            _type_: {directory_name: node_id}
+        """
+        created_node = self._mkdir(
+            name=directory_name,
+            parent_node_id=parent_node_id
+        )
+        node_id = created_node['f'][0]['h']
+        return {directory_name: node_id}

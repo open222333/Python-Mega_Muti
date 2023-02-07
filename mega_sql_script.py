@@ -1,21 +1,26 @@
-from general.mega_backup import MegaListen, logger
-import sys
+from general.mega_backup import MegaListen
+from general.mega_log import logger
+from traceback import format_exc
+import argparse
 import os
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-u', '--mega_upload_id', type=int, default=0)
+parser.add_argument('-s', '--mega_schedule_quantity', type=int, default=0)
+parser.add_argument('-l', '--listen_type', type=int, default=1)
+argv = parser.parse_args()
+
+try:
+    mega_upload_id = argv.mega_upload_id
+    mega_schedule_quantity = argv.mega_schedule_quantity
+    listen_type = argv.listen_type
+except Exception as e:
+    logger.error(f'{e}\n{format_exc()}')
 
 MEGA_ACCOUNT = os.environ.get('MEGA_ACCOUNT')
 MEGA_PASSWORD = os.environ.get('MEGA_PASSWORD')
 MEGA_LISTEN_DIR = os.environ.get('MEGA_LISTEN_DIR', None)
 MEGA_EXPIRED_DAYS = os.environ.get('MEGA_EXPIRED_DAYS', None)
-
-argv_len = len(sys.argv)
-if argv_len == 4:
-    try:
-        mega_upload_id = int(sys.argv[1])
-        mega_schedule_quantity = int(sys.argv[2])
-        listen_type = int(sys.argv[3])
-    except Exception as e:
-        logger.error(e)
 
 if not MEGA_LISTEN_DIR:
     try:
