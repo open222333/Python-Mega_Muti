@@ -531,7 +531,7 @@ class MegaListen:
                     'check_filename': self.__check_filename(file),
                     'check_extension': self.__check_extension(file)
                 }
-                
+
                 logger.debug(msg)
 
                 if self.__check_filename(file) and self.__check_extension(file):

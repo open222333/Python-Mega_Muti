@@ -1,5 +1,5 @@
 from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
-from traceback import format_exc
+from traceback import print_exc
 from datetime import datetime
 import logging
 import os
@@ -25,8 +25,17 @@ try:
     LOG_SIZE = int(os.environ.get('LOG_SIZE', 0))
     # 指定保留log天數(輸入數字) 預設7
     LOG_DAYS = int(os.environ.get('LOG_DAYS', 7))
+
+    log_setting = {
+        'LOG_PATH': LOG_PATH,
+        'LOG_DISABLE': LOG_DISABLE,
+        'LOG_FILE_DISABLE': LOG_FILE_DISABLE,
+        'LOG_LEVEL': LOG_LEVEL,
+        'LOG_SIZE': LOG_SIZE,
+        'LOG_DAYS': LOG_DAYS
+    }
 except Exception as err:
-    format_exc()
+    print_exc()
 
 # 建立log資料夾
 if not os.path.exists(LOG_PATH) and not LOG_DISABLE:
@@ -64,3 +73,5 @@ else:
     if not LOG_FILE_DISABLE:
         logger.addHandler(log_file_handler)
     logger.addHandler(log_msg_handler)
+
+    logger.info(log_setting)
