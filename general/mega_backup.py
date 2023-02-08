@@ -1,8 +1,12 @@
 from datetime import datetime
+from .mega_log import logger
 from mega import Mega
 from time import sleep, time
-from .mega_log import logger
-import traceback
+from Crypto.Cipher import AES
+from Crypto.Util import Counter
+from .crypto import a32_to_str, get_chunks, makebyte, str_to_a32, a32_to_base64, base64_url_encode, encrypt_attr, encrypt_key
+import requests
+import random
 import json
 import re
 import os
@@ -161,7 +165,7 @@ class MegaBackupFile:
                     file_number += 1
                     chunk = f.read(chunk_size)
         except Exception as err:
-            logger.error(err)
+            logger.error(msg=err, exc_info=True)
 
         self.__print_msg(f'分割 {filename} 結束')
 
@@ -225,7 +229,7 @@ class MegaBackupFile:
 
         upload_start_time = time()
 
-        mega_info = self.mega_client.upload(
+        mega_info = self.mega_client.upload_c(
             filename=path,
             dest=folder_id,
             dest_filename=filename
@@ -257,7 +261,7 @@ class MegaBackupFile:
         try:
             self.mega_client.destroy(private_id)
         except Exception as err:
-            logger.error(err)
+            logger.error(msg=err, exc_info=True)
         self.__print_msg(f'刪除mega上的 {filename} 結束')
 
     def __remove_file(self, path: str):
@@ -271,7 +275,7 @@ class MegaBackupFile:
         try:
             os.remove(path)
         except Exception as err:
-            logger.error(err)
+            logger.error(msg=err, exc_info=True)
         self.__print_msg(f'刪除 {filename} 結束')
 
     def __get_mega_folder_files(self):
@@ -345,7 +349,9 @@ class MegaBackupFile:
         else:
             filename = os.path.basename(self.file_path)
             file_dir = os.path.dirname(self.file_path)
-            os.rename(self.file_path, f"{file_dir}/{filename}._1")
+            logger.debug(f'執行分割 filename: {filename}, file_dir: {file_dir}')
+            if not bool(re.search(r'\.tar\._[\d]{1,10}$', filename)):
+                os.rename(self.file_path, f"{file_dir}/{filename}._1")
 
     def run(self, path=None):
         """執行上傳
@@ -408,6 +414,8 @@ class MegaListen:
 
         self.date = datetime.now().__format__("%Y%m%d")
         self.sub_f_info_json = 'sub_folder_info.json'
+
+        self.pass_extensions = ['.temp']
 
         # 分割功能 才進行 初始化子資料夾
         if not self.__check_sub_f_name() and listen_type == 0:
@@ -485,7 +493,7 @@ class MegaListen:
             try:
                 f.write(json.dumps(sub_f_info))
             except Exception as err:
-                logger.error(f'{err}\n{traceback.format_exc()}')
+                logger.error(msg=err, exc_info=True)
         logger.debug(f'設置json紀錄子資料夾資訊: {sub_f_info}')
         self.sub_f_info = sub_f_info
 
@@ -503,7 +511,7 @@ class MegaListen:
             try:
                 sub_f_info = json.loads(f.read())
             except Exception as err:
-                logger.error(f'{err}\n{traceback.format_exc()}')
+                logger.error(msg=err, exc_info=True)
         logger.debug(f'取得json紀錄子資料夾資訊: {sub_f_info}')
         self.sub_f_info = sub_f_info
         return sub_f_info
@@ -535,7 +543,7 @@ class MegaListen:
             return True
         return False
 
-    def __check_extension(self, filename: str):
+    def __check_extension(self, filename: str, *file_extensions):
         """檢查 是否符合副檔名條件
         若無設置file_extensions 則回傳True
 
@@ -545,13 +553,16 @@ class MegaListen:
         Returns:
             bool: 是否符合副檔名條件
         """
-        if self.file_extensions:
+        if len(file_extensions) > 0:
+            _, file_extension = os.path.splitext(filename)
+            return file_extension[1:] in file_extensions
+        elif self.file_extensions:
             _, file_extension = os.path.splitext(filename)
             return file_extension[1:] in self.file_extensions
         else:
             return True
 
-    def __check_filename(self, filename: str):
+    def __check_filename(self, filename: str, pattern=None):
         """檢查檔名是否匹配
         若無設置pattern 則回傳True
 
@@ -561,44 +572,44 @@ class MegaListen:
         Returns:
             _type_: _description_
         """
-        if self.pattern:
-            return re.search(self.pattern, filename)
+        if pattern:
+            r = re.search(pattern, filename)
+            # logger.debug(f'檢查檔名是否匹配 {filename}, pattern={pattern}, {r}')
+            if r:
+                return True
+            else:
+                return False
         else:
             return True
 
     def listen(self, cannal_id=None):
         """執行監聽
         """
-        pass_file = []
         while True:
-            for file in os.listdir(self.dir_path):
-
+            files = os.listdir(self.dir_path)
+            for file in files:
                 _, file_extension = os.path.splitext(file)
-                if file not in pass_file and file_extension != '.temp':
+                if file_extension not in self.pass_extensions:
                     msg = {
-                        'files': os.listdir(self.dir_path),
                         'file': file,
-                        'check_filename': self.__check_filename(file),
+                        'check_filename': self.__check_filename(file, self.pattern),
                         'check_extension': self.__check_extension(file)
                     }
-
                     logger.debug(msg)
-
-                    if self.__check_filename(file) and self.__check_extension(file):
+                    if self.__check_filename(file, self.pattern) and self.__check_extension(file):
                         if self.listen_type == 'upload':
+                            # 判斷是否多開
                             if self.schedule_quantity > 0:
                                 try:
                                     split_num = int(re.findall(r'\.tar\._(.*)', file)[0])
-                                except ValueError as err:
-                                    split_num = None
+                                    s_info = {
+                                        'split_num': split_num,
+                                        'schedule_quantity': self.schedule_quantity,
+                                        'cannal_id': cannal_id,
+                                        'remainder': split_num % self.schedule_quantity
+                                    }
                                 except Exception as err:
-                                    logger.error(f'{err}\n{traceback.format_exc()}')
-                                s_info = {
-                                    'split_num': split_num,
-                                    'schedule_quantity': self.schedule_quantity,
-                                    'cannal_id': cannal_id,
-                                    'remainder': split_num % self.schedule_quantity
-                                }
+                                    logger.error(msg=err, exc_info=True)
 
                                 logger.debug(s_info)
 
@@ -609,11 +620,14 @@ class MegaListen:
                                 if s_info['remainder'] == s_info['cannal_id']:
                                     mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
-                                    mbf.set_mega_auth(self.mega_account, self.mega_password)
+                                    if not self.test:
+                                        mbf.set_mega_auth(self.mega_account, self.mega_password)
+
                                     if self.expired_days:
                                         mbf.set_expired_days(self.expired_days)
 
                                     try:
+                                        # 使用日期子資料夾
                                         sub_f_info = self.get_sub_folder_info_from_json()
                                         mbf.set_sub_folder_info(
                                             folder_id=sub_f_info['folder_id'],
@@ -621,19 +635,21 @@ class MegaListen:
                                         )
                                         mbf.set_sub_folder_upload_on()
                                     except Exception as err:
-                                        logger.error(f'{err}/n{traceback.format_exc()}')
+                                        logger.error(msg=err, exc_info=True)
                                         mbf.set_sub_folder_upload_off()
 
                                     mbf.run()
                             else:
                                 mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
-                                mbf.set_mega_auth(self.mega_account, self.mega_password)
+                                if not self.test:
+                                    mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                                 if self.expired_days:
                                     mbf.set_expired_days(self.expired_days)
 
                                 try:
+                                    # 使用日期子資料夾
                                     sub_f_info = self.get_sub_folder_info_from_json()
                                     mbf.set_sub_folder_info(
                                         folder_id=sub_f_info['folder_id'],
@@ -641,30 +657,38 @@ class MegaListen:
                                     )
                                     mbf.set_sub_folder_upload_on()
                                 except Exception as err:
-                                    logger.error(f'{err}/n{traceback.format_exc()}')
+                                    logger.error(msg=err, exc_info=True)
                                     mbf.set_sub_folder_upload_off()
 
                                 mbf.run()
                         elif self.listen_type == 'split':
+
                             mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
-                            # 若json紀錄不符 則建立子資料夾並設定子資料夾資訊
+                            # 是否建立日期子資料夾
                             if not self.__check_sub_f_name():
+                                if not self.test:
+                                    mbf.set_mega_auth(self.mega_account, self.mega_password)
+
                                 sub_f_info = mbf.create_folder(self.date, mbf.mega_folder_id)
+
                                 self.set_sub_folder_info_to_json(self.date, sub_f_info[self.date])
 
                             # 分割
                             mbf.run_split()
                         elif self.listen_type == 'check_expired_file':
+                            # 刪除超過指定天數的檔案
                             mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
-                            mbf.set_mega_auth(self.mega_account, self.mega_password)
+
+                            if not self.test:
+                                mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                             if self.expired_days:
                                 mbf.set_expired_days(self.expired_days)
+
                             # 刪除過期的mega檔案
                             mbf.check_mega_files()
-
-                        self.is_sleep = False
+                self.is_sleep = False
             else:
                 if not self.is_sleep:
                     self.is_sleep = True
@@ -692,3 +716,107 @@ class Mega_Custom(Mega):
         )
         node_id = created_node['f'][0]['h']
         return {directory_name: node_id}
+
+    def upload_c(self, filename, dest=None, dest_filename=None):
+        # determine storage node
+        if dest is None:
+            # if none set, upload to cloud drive node
+            if not hasattr(self, 'root_id'):
+                self.get_files()
+            dest = self.root_id
+
+        # request upload url, call 'u' method
+        with open(filename, 'rb') as input_file:
+            file_size = os.path.getsize(filename)
+            ul_url = self._api_request({'a': 'u', 's': file_size})['p']
+
+            # generate random aes key (128) for file
+            ul_key = [random.randint(0, 0xFFFFFFFF) for _ in range(6)]
+            k_str = a32_to_str(ul_key[:4])
+            count = Counter.new(128, initial_value=((ul_key[4] << 32) + ul_key[5]) << 64)
+            aes = AES.new(k_str, AES.MODE_CTR, counter=count)
+
+            upload_progress = 0
+            completion_file_handle = None
+
+            mac_str = '\0' * 16
+            mac_encryptor = AES.new(
+                k_str, AES.MODE_CBC,
+                mac_str.encode("utf8")
+            )
+            iv_str = a32_to_str([ul_key[4], ul_key[5], ul_key[4], ul_key[5]])
+            if file_size > 0:
+                for chunk_start, chunk_size in get_chunks(file_size):
+                    chunk = input_file.read(chunk_size)
+                    upload_progress += len(chunk)
+
+                    encryptor = AES.new(k_str, AES.MODE_CBC, iv_str)
+                    for i in range(0, len(chunk) - 16, 16):
+                        block = chunk[i:i + 16]
+                        encryptor.encrypt(block)
+
+                    # fix for files under 16 bytes failing
+                    if file_size > 16:
+                        i += 16
+                    else:
+                        i = 0
+
+                    block = chunk[i:i + 16]
+                    if len(block) % 16:
+                        block += makebyte('\0' * (16 - len(block) % 16))
+                    mac_str = mac_encryptor.encrypt(encryptor.encrypt(block))
+
+                    # encrypt file and upload
+                    chunk = aes.encrypt(chunk)
+                    output_file = requests.post(
+                        ul_url + "/" +
+                        str(chunk_start),
+                        data=chunk,
+                        timeout=self.timeout
+                    )
+                    completion_file_handle = output_file.text
+                    # 計算百分比
+                    precent = float(round(100 * upload_progress / file_size, 1))
+                    logger.info(f'{upload_progress} of {file_size} uploaded, {precent}%')
+            else:
+                output_file = requests.post(
+                    ul_url + "/0",
+                    data='',
+                    timeout=self.timeout
+                )
+                completion_file_handle = output_file.text
+
+            file_mac = str_to_a32(mac_str)
+
+            # determine meta mac
+            meta_mac = (file_mac[0] ^ file_mac[1], file_mac[2] ^ file_mac[3])
+
+            dest_filename = dest_filename or os.path.basename(filename)
+            attribs = {'n': dest_filename}
+
+            encrypt_attribs = base64_url_encode(
+                encrypt_attr(attribs, ul_key[:4]))
+            key = [
+                ul_key[0] ^ ul_key[4],
+                ul_key[1] ^ ul_key[5],
+                ul_key[2] ^ meta_mac[0],
+                ul_key[3] ^ meta_mac[1],
+                ul_key[4],
+                ul_key[5],
+                meta_mac[0],
+                meta_mac[1]
+            ]
+            encrypted_key = a32_to_base64(encrypt_key(key, self.master_key))
+            # update attributes
+            data = self._api_request({
+                'a': 'p',
+                't': dest,
+                'i': self.request_id,
+                'n': [{
+                    'h': completion_file_handle,
+                    't': 0,
+                    'a': encrypt_attribs,
+                    'k': encrypted_key
+                }]
+            })
+            return data

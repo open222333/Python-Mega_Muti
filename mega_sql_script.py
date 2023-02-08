@@ -1,6 +1,5 @@
 from general.mega_backup import MegaListen
 from general.mega_log import logger
-from traceback import format_exc
 import argparse
 import os
 
@@ -14,8 +13,8 @@ try:
     mega_upload_id = argv.mega_upload_id
     mega_schedule_quantity = argv.mega_schedule_quantity
     listen_type = argv.listen_type
-except Exception as e:
-    logger.error(f'{e}\n{format_exc()}')
+except Exception as err:
+    logger.error(msg=err, exc_info=True)
 
 MEGA_ACCOUNT = os.environ.get('MEGA_ACCOUNT')
 MEGA_PASSWORD = os.environ.get('MEGA_PASSWORD')
@@ -29,7 +28,7 @@ if not MEGA_LISTEN_DIR:
         if not os.path.exists(MEGA_LISTEN_DIR):
             os.mkdir(MEGA_LISTEN_DIR)
     except Exception as err:
-        logger.error(err)
+        logger.error(msg=err, exc_info=True)
 else:
     MEGA_LISTEN_DIR = MEGA_LISTEN_DIR
 
@@ -37,7 +36,7 @@ try:
     if MEGA_EXPIRED_DAYS != None:
         MEGA_EXPIRED_DAYS = int(MEGA_EXPIRED_DAYS)
 except Exception as err:
-    logger.error(err)
+    logger.error(msg=err, exc_info=True)
 
 type_dict = {
     0: '分割',
@@ -65,7 +64,7 @@ if listen_type == 0:
     ml.set_file_extension('tar')
 elif listen_type == 1:
     # 上傳設定
-    ml.set_pattern(r'\.tar\._[\d]{1,10}')
+    ml.set_pattern(r'\.tar\._[\d]{1,10}$')
     setting_info['監聽資料夾'] = MEGA_LISTEN_DIR
     setting_info['上傳 ID'] = mega_upload_id
     setting_info['上傳 執行總數'] = mega_schedule_quantity
@@ -74,7 +73,7 @@ elif listen_type == 2:
     ml.set_expired_days(MEGA_EXPIRED_DAYS)
     setting_info['保留天數'] = MEGA_EXPIRED_DAYS
 
-logger.info(setting_info)
+logger.debug(setting_info)
 
 ml.set_schedule_quantity(mega_schedule_quantity)
 ml.listen(cannal_id=mega_upload_id)

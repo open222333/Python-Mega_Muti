@@ -80,4 +80,4 @@ else:
         logger.addHandler(log_file_handler)
     logger.addHandler(log_msg_handler)
 
-    logger.info(log_setting)
+    logger.debug(log_setting)
