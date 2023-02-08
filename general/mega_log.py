@@ -2,10 +2,13 @@ from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
 from traceback import print_exc
 from datetime import datetime
 import logging
+import socket
 import os
 
 
 try:
+    HOSTNAME = socket.gethostname()
+
     LOG_PATH = os.environ.get('LOG_PATH', 'logs')
 
     # 關閉log
@@ -45,10 +48,10 @@ if LOG_DISABLE:
     logging.disable()
 else:
     if LOG_SIZE:
-        log_file = f'{LOG_PATH}/mega.log'
+        log_file = f'{LOG_PATH}/{HOSTNAME}-mega.log'
         log_file_handler = RotatingFileHandler(f'logs/{log_file}.log', maxBytes=LOG_SIZE, backupCount=5)
     else:
-        log_file = f'{LOG_PATH}/{datetime.now().__format__("%Y%m%d")}.log'
+        log_file = f'{LOG_PATH}/{datetime.now().__format__("%Y%m%d")}-{HOSTNAME}.log'
         log_file_handler = TimedRotatingFileHandler(log_file, when='D', backupCount=LOG_DAYS)
 
     log_msg_handler = logging.StreamHandler()
@@ -57,7 +60,7 @@ else:
     log_file_handler.setFormatter(log_formatter)
     log_msg_handler.setFormatter(log_formatter)
 
-    logger = logging.getLogger('test')
+    logger = logging.getLogger(HOSTNAME)
 
     if LOG_LEVEL == 'DEBUG':
         logger.setLevel(logging.DEBUG)

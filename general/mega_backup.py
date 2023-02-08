@@ -407,6 +407,7 @@ class MegaListen:
         self.expired_days = None
 
         self.date = datetime.now().__format__("%Y%m%d")
+        self.sub_f_info_json = 'sub_folder_info.json'
 
     def set_file_extension(self, *extension: str):
         """設置 篩選副檔名條件
@@ -455,7 +456,15 @@ class MegaListen:
         """
         self.folder_id = folder_id
 
-    def set_sub_folder_info(self, folder_name: str, folder_id: str):
+    def set_sub_f_info_json(self, path:str):
+        """設置sub_f_info_json
+
+        Args:
+            path (str): json路徑
+        """
+        self.sub_f_info_json = path
+
+    def set_sub_folder_info_to_json(self, folder_name: str, folder_id: str):
         """設置json紀錄子資料夾資訊
 
         Args:
@@ -466,14 +475,16 @@ class MegaListen:
             'name': folder_name,
             'folder_id': folder_id
         }
-        with open('sub_folder_info.json', 'w') as f:
+        with open(self.sub_f_info_json, 'w') as f:
             try:
                 f.write(json.dumps(sub_f_info))
             except Exception as err:
                 logger.error(f'{err}\n{traceback.format_exc()}')
+        logger.debug(f'設置json紀錄子資料夾資訊: {sub_f_info}')
+        self.sub_f_info = sub_f_info
 
-    def get_sub_folder_info(self):
-        """取得json紀錄子資料夾資訊
+    def get_sub_folder_info_from_json(self):
+        """從json取得json紀錄子資料夾資訊
 
         Returns:
             _type_:
@@ -482,11 +493,41 @@ class MegaListen:
                 'folder_id': folder_id
             }
         """
-        with open('sub_folder_info.json', 'r') as f:
+        with open(self.sub_f_info_json, 'r') as f:
             try:
-                return json.loads(f.read())
+                sub_f_info = json.loads(f.read())
             except Exception as err:
                 logger.error(f'{err}\n{traceback.format_exc()}')
+        logger.debug(f'取得json紀錄子資料夾資訊: {sub_f_info}')
+        self.sub_f_info = sub_f_info
+        return sub_f_info
+
+    def __check_sub_f_name(self)-> bool:
+        """檢查子資料夾名稱是否已建立id資訊
+
+        若self.sub_f_info_json紀錄的
+        name值 與 今日日期相同
+        folder_id值 非空值
+        回傳 True
+
+        Returns:
+            bool :
+        """
+        if not os.path.exists(self.sub_f_info_json):
+            return False
+
+        with open(self.sub_f_info_json, 'r') as f:
+            sub_f_info = json.loads(f.read())
+
+        today = datetime.now().__format__("%Y%m%d")
+
+        if self.date != today:
+            self.set_date(today)
+
+        logger.debug(f'檢查子資料夾名稱是否已建立id資訊, info[\'name\']: {sub_f_info["name"]}, date: {today}')
+        if today == sub_f_info['name'] and sub_f_info['folder_id'] != '':
+            return True
+        return False
 
     def __check_extension(self, filename: str):
         """檢查 是否符合副檔名條件
@@ -522,40 +563,72 @@ class MegaListen:
     def listen(self, cannal_id=None):
         """執行監聽
         """
+        pass_file = []
         while True:
             for file in os.listdir(self.dir_path):
 
-                msg = {
-                    'files': os.listdir(self.dir_path),
-                    'file': file,
-                    'check_filename': self.__check_filename(file),
-                    'check_extension': self.__check_extension(file)
-                }
+                _, file_extension = os.path.splitext(file)
+                if file not in pass_file and file_extension != '.temp':
+                    msg = {
+                        'files': os.listdir(self.dir_path),
+                        'file': file,
+                        'check_filename': self.__check_filename(file),
+                        'check_extension': self.__check_extension(file)
+                    }
 
-                logger.debug(msg)
+                    logger.debug(msg)
 
-                if self.__check_filename(file) and self.__check_extension(file):
-                    if self.listen_type == 'upload':
-                        if self.schedule_quantity > 0:
-                            split_num = int(re.findall(r'\.tar\._(.*)', file)[0])
-                            s_info = {
-                                'split_num': split_num,
-                                'schedule_quantity': self.schedule_quantity,
-                                'cannal_id': cannal_id,
-                                'remainder': split_num % self.schedule_quantity
-                            }
-                            logger.debug(s_info)
+                    if self.__check_filename(file) and self.__check_extension(file):
+                        if self.listen_type == 'upload':
+                            if self.schedule_quantity > 0:
+                                try:
+                                    split_num = int(re.findall(r'\.tar\._(.*)', file)[0])
+                                except ValueError as err:
+                                    split_num = None
+                                except Exception as err:
+                                    logger.error(f'{err}\n{traceback.format_exc()}')
+                                s_info = {
+                                    'split_num': split_num,
+                                    'schedule_quantity': self.schedule_quantity,
+                                    'cannal_id': cannal_id,
+                                    'remainder': split_num % self.schedule_quantity
+                                }
 
-                            if s_info['remainder'] == s_info['cannal_id']:
+                                logger.debug(s_info)
+
+                                # 若非分割檔格式 進入下一圈
+                                if split_num is None:
+                                    continue
+
+                                if s_info['remainder'] == s_info['cannal_id']:
+                                    mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+
+                                    mbf.set_mega_auth(self.mega_account, self.mega_password)
+                                    if self.expired_days:
+                                        mbf.set_expired_days(self.expired_days)
+
+                                    try:
+                                        sub_f_info = self.get_sub_folder_info_from_json()
+                                        mbf.set_sub_folder_info(
+                                            folder_id=sub_f_info['folder_id'],
+                                            folder_name=sub_f_info['name']
+                                        )
+                                        mbf.set_sub_folder_upload_on()
+                                    except Exception as err:
+                                        logger.error(f'{err}/n{traceback.format_exc()}')
+                                        mbf.set_sub_folder_upload_off()
+
+                                    mbf.run()
+                            else:
                                 mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
 
-
                                 mbf.set_mega_auth(self.mega_account, self.mega_password)
+
                                 if self.expired_days:
                                     mbf.set_expired_days(self.expired_days)
 
                                 try:
-                                    sub_f_info = self.get_sub_folder_info()
+                                    sub_f_info = self.get_sub_folder_info_from_json()
                                     mbf.set_sub_folder_info(
                                         folder_id=sub_f_info['folder_id'],
                                         folder_name=sub_f_info['name']
@@ -566,48 +639,26 @@ class MegaListen:
                                     mbf.set_sub_folder_upload_off()
 
                                 mbf.run()
-                        else:
+                        elif self.listen_type == 'split':
                             mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
 
+                            # 若json紀錄不符 則建立子資料夾並設定子資料夾資訊
+                            if not self.__check_sub_f_name():
+                                sub_f_info = mbf.create_folder(self.date, mbf.mega_folder_id)
+                                self.set_sub_folder_info_to_json(self.date, sub_f_info[self.date])
+
+                            # 分割
+                            mbf.run_split()
+                        elif self.listen_type == 'check_expired_file':
+                            mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
                             mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                             if self.expired_days:
                                 mbf.set_expired_days(self.expired_days)
+                            # 刪除過期的mega檔案
+                            mbf.check_mega_files()
 
-                            try:
-                                sub_f_info = self.get_sub_folder_info()
-                                mbf.set_sub_folder_info(
-                                    folder_id=sub_f_info['folder_id'],
-                                    folder_name=sub_f_info['name']
-                                )
-                                mbf.set_sub_folder_upload_on()
-                            except Exception as err:
-                                logger.error(f'{err}/n{traceback.format_exc()}')
-                                mbf.set_sub_folder_upload_off()
-
-                            mbf.run()
-                    elif self.listen_type == 'split':
-                        mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-
-                        # 建立日期子資料夾
-                        today = datetime.now().__format__("%Y%m%d")
-                        if today != self.date:
-                            self.set_date(today)
-                            sub_f_info = mbf.create_folder(self.date, mbf.mega_folder_id)
-                            self.set_sub_folder_info(self.date, sub_f_info[self.date])
-
-                        # 分割
-                        mbf.run_split()
-                    elif self.listen_type == 'check_expired_file':
-                        mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
-                        mbf.set_mega_auth(self.mega_account, self.mega_password)
-
-                        if self.expired_days:
-                            mbf.set_expired_days(self.expired_days)
-                        # 刪除過期的mega檔案
-                        mbf.check_mega_files()
-
-                    self.is_sleep = False
+                        self.is_sleep = False
             else:
                 if not self.is_sleep:
                     self.is_sleep = True

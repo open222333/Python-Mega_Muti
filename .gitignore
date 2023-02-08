@@ -6,7 +6,7 @@
 mega_backup
 target_dir
 test*
-
+sub_folder_info.json
 mega.env
 
 # Node artifact files
