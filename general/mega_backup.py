@@ -12,19 +12,19 @@ class MegaBackupFile:
     """上傳檔案至mega
     """
 
-    def __init__(self, file_path: str, mega_folder: str = None, test=False) -> None:
+    def __init__(self, file_path: str, mega_folder_id: str, mega_folder: str = None, test=False) -> None:
         """_summary_
 
         Args:
             file_path (str): 路徑
+            mega_folder_id (str): 上傳的資料夾id
             mega_folder (str): 上傳的資料夾名稱. Defaults to None.
-            mega_folder_id (str): 上傳的資料夾id. Defaults to None.
             test (bool): 是否為測試. Defaults to False.
         """
         self.file_path = file_path
 
         self.mega_folder = mega_folder
-        self.mega_folder_id = None
+        self.mega_folder_id = mega_folder_id
 
         self.sub_f = False
         self.sub_folder_id = None
@@ -70,7 +70,6 @@ class MegaBackupFile:
         """關閉使用子資料夾資訊上傳
         """
         self.sub_f = False
-
 
     def set_folder_info(self, folder_id: str, folder_name: str):
         """設置mega資料夾資訊
@@ -200,7 +199,6 @@ class MegaBackupFile:
         else:
             info = self.mega_client.create_folder_from_id(name, self.mega_folder_id)
         return info
-
 
     def __upload_to_mega(self, path: str, folder_id: str = None, folder_name: str = None):
         """上傳至mega
@@ -372,13 +370,14 @@ class MegaListen:
     """監聽資料夾 若有符合條間的檔案則執行上傳至mega
     """
 
-    def __init__(self, dir_path: str, mega_account: str, mega_password: str, listen_type: int = 1, test=False) -> None:
+    def __init__(self, dir_path: str, mega_account: str, mega_password: str, folder_id: str, listen_type: int = 1, test=False) -> None:
         """_summary_
 
         Args:
             dir_path (str): 監聽路徑
             mega_account (str): mega帳號
             mega_password (str): mega密碼
+            folder_id (str): mega目標資料夾ID
             test (bool, optional): 是否為測試. Defaults to False.
             listen_type (int): 0: 'split', 1: 'upload', 2: 'check_expired_file' . Defaults to 1.
         """
@@ -397,6 +396,7 @@ class MegaListen:
 
         self.mega_account = mega_account
         self.mega_password = mega_password
+        self.folder_id = folder_id
 
         self.test = test
         self.listen_type = type_dict[listen_type]
@@ -408,6 +408,12 @@ class MegaListen:
 
         self.date = datetime.now().__format__("%Y%m%d")
         self.sub_f_info_json = 'sub_folder_info.json'
+
+        # 分割功能 才進行 初始化子資料夾
+        if not self.__check_sub_f_name() and listen_type == 0:
+            client = Mega_Custom().login(self.mega_account, self.mega_password)
+            sub_f_info = client.create_folder_from_id(self.date, self.folder_id)
+            self.set_sub_folder_info_to_json(self.date, sub_f_info[self.date])
 
     def set_file_extension(self, *extension: str):
         """設置 篩選副檔名條件
@@ -456,7 +462,7 @@ class MegaListen:
         """
         self.folder_id = folder_id
 
-    def set_sub_f_info_json(self, path:str):
+    def set_sub_f_info_json(self, path: str):
         """設置sub_f_info_json
 
         Args:
@@ -502,7 +508,7 @@ class MegaListen:
         self.sub_f_info = sub_f_info
         return sub_f_info
 
-    def __check_sub_f_name(self)-> bool:
+    def __check_sub_f_name(self) -> bool:
         """檢查子資料夾名稱是否已建立id資訊
 
         若self.sub_f_info_json紀錄的
@@ -601,7 +607,7 @@ class MegaListen:
                                     continue
 
                                 if s_info['remainder'] == s_info['cannal_id']:
-                                    mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+                                    mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
                                     mbf.set_mega_auth(self.mega_account, self.mega_password)
                                     if self.expired_days:
@@ -620,7 +626,7 @@ class MegaListen:
 
                                     mbf.run()
                             else:
-                                mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+                                mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
                                 mbf.set_mega_auth(self.mega_account, self.mega_password)
 
@@ -640,7 +646,7 @@ class MegaListen:
 
                                 mbf.run()
                         elif self.listen_type == 'split':
-                            mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+                            mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
 
                             # 若json紀錄不符 則建立子資料夾並設定子資料夾資訊
                             if not self.__check_sub_f_name():
@@ -650,7 +656,7 @@ class MegaListen:
                             # 分割
                             mbf.run_split()
                         elif self.listen_type == 'check_expired_file':
-                            mbf = MegaBackupFile(f'{self.dir_path}/{file}', test=self.test)
+                            mbf = MegaBackupFile(f'{self.dir_path}/{file}', mega_folder_id=self.folder_id, test=self.test)
                             mbf.set_mega_auth(self.mega_account, self.mega_password)
 
                             if self.expired_days:

@@ -20,6 +20,7 @@ except Exception as e:
 MEGA_ACCOUNT = os.environ.get('MEGA_ACCOUNT')
 MEGA_PASSWORD = os.environ.get('MEGA_PASSWORD')
 MEGA_LISTEN_DIR = os.environ.get('MEGA_LISTEN_DIR', None)
+MEGA_FOLDER_ID = os.environ.get('MEGA_FOLDER_ID', None)
 MEGA_EXPIRED_DAYS = os.environ.get('MEGA_EXPIRED_DAYS', None)
 
 if not MEGA_LISTEN_DIR:
@@ -47,6 +48,7 @@ type_dict = {
 setting_info = {
     'MEGA帳號': MEGA_ACCOUNT,
     'MEGA密碼': MEGA_PASSWORD,
+    'MEGA目標資料夾ID': MEGA_FOLDER_ID,
     '監聽功能': type_dict[listen_type]
 }
 
@@ -54,6 +56,7 @@ ml = MegaListen(
     dir_path=MEGA_LISTEN_DIR,
     mega_account=MEGA_ACCOUNT,
     mega_password=MEGA_PASSWORD,
+    folder_id=MEGA_FOLDER_ID,
     listen_type=listen_type
 )
 

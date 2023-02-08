@@ -28,4 +28,3 @@ services:
     volumes:
       - .:/usr/src/app
     command: bash -c 'python -u mega_sql_script.py -l 2'
-

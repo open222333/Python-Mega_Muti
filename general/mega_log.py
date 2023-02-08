@@ -47,17 +47,20 @@ if not os.path.exists(LOG_PATH) and not LOG_DISABLE:
 if LOG_DISABLE:
     logging.disable()
 else:
+    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
     if LOG_SIZE:
         log_file = f'{LOG_PATH}/{HOSTNAME}-mega.log'
-        log_file_handler = RotatingFileHandler(f'logs/{log_file}.log', maxBytes=LOG_SIZE, backupCount=5)
+        if not LOG_FILE_DISABLE:
+            log_file_handler = RotatingFileHandler(f'logs/{log_file}.log', maxBytes=LOG_SIZE, backupCount=5)
+            log_file_handler.setFormatter(log_formatter)
     else:
         log_file = f'{LOG_PATH}/{datetime.now().__format__("%Y%m%d")}-{HOSTNAME}.log'
-        log_file_handler = TimedRotatingFileHandler(log_file, when='D', backupCount=LOG_DAYS)
+        if not LOG_FILE_DISABLE:
+            log_file_handler = TimedRotatingFileHandler(log_file, when='D', backupCount=LOG_DAYS)
+            log_file_handler.setFormatter(log_formatter)
 
     log_msg_handler = logging.StreamHandler()
-
-    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    log_file_handler.setFormatter(log_formatter)
     log_msg_handler.setFormatter(log_formatter)
 
     logger = logging.getLogger(HOSTNAME)
